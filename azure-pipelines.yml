@@ -1,0 +1,63 @@
+# Azure build pipelines for Sysmon
+
+resources:
+  repositories:
+  - repository: Sysmon
+    type: github
+    endpoint: sysinternals
+    name: microsoft/Sysmon-Linux
+
+  - repository: SysinternalsEBPF
+    type: github
+    endpoint: sysinternals
+    name: Microsoft/SysinternalsEBPF
+
+trigger:
+    branches:
+      include:
+        - release/*
+        - main
+      exclude:
+        - dev/*
+        - test/*
+
+pr:
+- main
+
+stages:
+ - stage: "Build"
+   jobs:
+    - job: "Build_Sysmon_Ubuntu"
+      pool:
+        vmImage: "ubuntu-22.04"
+      timeoutInMinutes: 240
+      steps:
+      - checkout: self
+        # Preserve the directory used by build scripts and analysis filters.
+        path: s/SysmonForLinux
+        submodules: true
+
+      - checkout: SysinternalsEBPF
+
+      - script: |
+          chmod +x SysmonForLinux/.container/install-ubuntu-dependencies.sh
+          SysmonForLinux/.container/install-ubuntu-dependencies.sh
+        displayName: "Install pre-reqs for Ubuntu"
+
+      - template: templates/build.yaml@SysinternalsEBPF
+        parameters:
+          srcPath: 'SysinternalsEBPF'
+          runStaticAnalysis: false
+          builddir: 'sysinternalsEBPF_build'
+
+      - script: |
+          cd $(Build.SourcesDirectory)/SysinternalsEBPF/sysinternalsEBPF_build
+          sudo make install
+          sudo ldconfig
+        displayName: "Install SysinternalsEBPF"
+
+      - template: templates/build.yaml
+        parameters:
+          srcPath: 'SysmonForLinux'
+          runStaticAnalysis: true
+          builddir: 'sysmon_build'

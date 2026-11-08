@@ -1,0 +1,101 @@
+#!/bin/sh
+#
+#    SysmonForLinux
+#
+#    Copyright (c) Microsoft Corporation
+#
+#    All rights reserved.
+#
+#    MIT License
+#
+#    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the ""Software""), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+#
+#    The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+#
+#    THE SOFTWARE IS PROVIDED *AS IS*, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+
+#################################################################################
+#
+# makePackages.sh
+#
+# Builds the directory trees for DEB and RPM packages and, if suitable tools are
+# available, builds the actual packages too.
+#
+#################################################################################
+
+
+if [ "$8" = "" ]; then
+    echo "Usage: $0 <SourceDir> <BinaryDir> <package name> <package version> <package release> <PackageType> <DebArch> <RpmArch>"
+    exit 1
+fi
+
+# copy cmake vars
+CMAKE_SOURCE_DIR=$1
+PROJECT_BINARY_DIR=$2
+PACKAGE_NAME=$3
+PACKAGE_VER=$4
+PACKAGE_REL=$5
+PACKAGE_TYPE=$6
+DEB_ARCH=$7
+RPM_ARCH=$8
+
+DEB_PACKAGE_NAME="${PACKAGE_NAME}_${PACKAGE_VER}_${DEB_ARCH}"
+RPM_PACKAGE_NAME="${PACKAGE_NAME}-${PACKAGE_VER}-${PACKAGE_REL}"
+
+if [ "$PACKAGE_TYPE" = "deb" ]; then
+    DPKGDEB=`which dpkg-deb`
+
+    # clean up first
+    if [ -d "${PROJECT_BINARY_DIR}/deb" ]; then
+        rm -rf "${PROJECT_BINARY_DIR}/deb"
+    fi
+
+    # copy deb files
+    mkdir -p "${PROJECT_BINARY_DIR}/deb/${DEB_PACKAGE_NAME}"
+    cp -a "${CMAKE_SOURCE_DIR}/package/DEBIAN" "${PROJECT_BINARY_DIR}/deb/${DEB_PACKAGE_NAME}/"
+    cp "${PROJECT_BINARY_DIR}/DEBIANcontrol" "${PROJECT_BINARY_DIR}/deb/${DEB_PACKAGE_NAME}/DEBIAN/control"
+    mkdir -p "${PROJECT_BINARY_DIR}/deb/${DEB_PACKAGE_NAME}/usr/share/man/man8"
+    cp -a "${PROJECT_BINARY_DIR}/sysmon.8.gz" "${PROJECT_BINARY_DIR}/deb/${DEB_PACKAGE_NAME}/usr/share/man/man8"
+    mkdir -p "${PROJECT_BINARY_DIR}/deb/${DEB_PACKAGE_NAME}/usr/bin"
+    cp "${PROJECT_BINARY_DIR}/sysmon" "${PROJECT_BINARY_DIR}/deb/${DEB_PACKAGE_NAME}/usr/bin/"
+
+    # make the deb
+    if [ "$DPKGDEB" != "" ]; then
+        cd "${PROJECT_BINARY_DIR}/deb"
+        "$DPKGDEB" -Zxz --build --root-owner-group "${DEB_PACKAGE_NAME}"
+        RET=$?
+    else
+        echo "No dpkg-deb found"
+        RET=1
+    fi
+
+    exit $RET
+fi
+
+if [ "$PACKAGE_TYPE" = "rpm" ]; then
+    RPMBUILD=`which rpmbuild`
+
+    if [ -d "${PROJECT_BINARY_DIR}/rpm" ]; then
+        rm -rf "${PROJECT_BINARY_DIR}/rpm"
+    fi
+
+    # copy rpm files
+    mkdir -p "${PROJECT_BINARY_DIR}/rpm/${RPM_PACKAGE_NAME}/SPECS"
+    cp -a "${PROJECT_BINARY_DIR}/SPECS.spec" "${PROJECT_BINARY_DIR}/rpm/${RPM_PACKAGE_NAME}/SPECS/${RPM_PACKAGE_NAME}.spec"
+    mkdir "${PROJECT_BINARY_DIR}/rpm/${RPM_PACKAGE_NAME}/BUILD/"
+    cp "${PROJECT_BINARY_DIR}/sysmon.8.gz" "${PROJECT_BINARY_DIR}/sysmon" "${PROJECT_BINARY_DIR}/rpm/${RPM_PACKAGE_NAME}/BUILD/"
+
+    # make the rpm
+    if [ "$RPMBUILD" != "" ]; then
+        cd "${PROJECT_BINARY_DIR}/rpm/${RPM_PACKAGE_NAME}"
+        "$RPMBUILD" --target "${RPM_ARCH}" --define "_topdir `pwd`" -v -bb "SPECS/${RPM_PACKAGE_NAME}.spec"
+        RET=$?
+        cp "RPMS/${RPM_ARCH}/"*.rpm ..
+    else
+        echo "No rpmbuild found"
+        RET=1
+    fi
+fi
+
+exit $RET
